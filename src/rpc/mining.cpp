@@ -387,7 +387,14 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
             "  \"weightlimit\" : n,                (numeric) limit of block weight\n"
             "  \"curtime\" : ttt,                  (numeric) current timestamp in seconds since epoch (Jan 1 1970 GMT)\n"
             "  \"bits\" : \"xxxxxxxx\",              (string) compressed target of next block\n"
-            "  \"height\" : n                      (numeric) The height of the next block\n"
+            "  \"height\" : n,                     (numeric) The height of the next block\n"
+            "  \"developmentfund\" : {              (json object) information about the development fund status\n"
+            "    \"active\" : true|false,           (boolean) whether the development fund is active for this block\n"
+            "    \"address\" : \"xxxx\",              (string) the development fund address for this block height\n"
+            "    \"amount\" : n,                    (numeric) the amount going to the development fund (in Satoshis)\n"
+            "    \"percent\" : n                    (numeric) the percentage of the block reward going to the development fund\n"
+            "  },\n"
+            "  \"mineraddress\" : \"xxxx\"            (string) the miner address specified by -mineraddress (if provided)\n"
             "}\n"
 
             "\nExamples:\n"
@@ -548,6 +555,9 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
     }
     CBlock* pblock = &pblocktemplate->block; // pointer for convenience
     const Consensus::Params& consensusParams = Params().GetConsensus();
+    
+    // Get miner address if specified
+    std::string strMinerAddress = GetArg("-mineraddress", "");
 
     // Update nTime
     UpdateTime(pblock, consensusParams, pindexPrev);
@@ -683,6 +693,30 @@ UniValue getblocktemplate(const UniValue& params, bool fHelp)
     result.push_back(Pair("curtime", pblock->GetBlockTime()));
     result.push_back(Pair("bits", strprintf("%08x", pblock->nBits)));
     result.push_back(Pair("height", (int64_t)(pindexPrev->nHeight+1)));
+
+    // Add development fund information
+    int nHeight = pindexPrev->nHeight + 1;
+    bool isDevFundActive = (nHeight > Params().GetDevelopmentFundStartHeight()) && 
+                           (nHeight <= Params().GetLastDevelopmentFundBlockHeight());
+    UniValue devFundObj(UniValue::VOBJ);
+    devFundObj.push_back(Pair("active", isDevFundActive));
+    
+    if (isDevFundActive) {
+        CAmount baseReward = GetBlockSubsidy(nHeight, consensusParams);
+        CAmount devFundAmount = baseReward * Params().GetDevelopmentFundPercent() / 100;
+        std::string devFundAddress = Params().GetDevelopmentFundAddressAtHeight(nHeight);
+        
+        devFundObj.push_back(Pair("address", devFundAddress));
+        devFundObj.push_back(Pair("amount", devFundAmount));
+        devFundObj.push_back(Pair("percent", Params().GetDevelopmentFundPercent()));
+    }
+    
+    result.push_back(Pair("developmentfund", devFundObj));
+    
+    // Add miner address if specified
+    if (!strMinerAddress.empty()) {
+        result.push_back(Pair("mineraddress", strMinerAddress));
+    }
 
     const struct BIP9DeploymentInfo& segwit_info = VersionBitsDeploymentInfo[Consensus::DEPLOYMENT_SEGWIT];
     if (!pblocktemplate->vchCoinbaseCommitment.empty() && setClientRules.find(segwit_info.name) != setClientRules.end()) {

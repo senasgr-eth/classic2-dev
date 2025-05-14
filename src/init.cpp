@@ -26,6 +26,7 @@
 #include "rpc/server.h"
 #include "rpc/register.h"
 #include "script/standard.h"
+#include "base58.h"
 #include "script/sigcache.h"
 #include "scheduler.h"
 #include "timedata.h"
@@ -456,6 +457,7 @@ std::string HelpMessage(HelpMessageMode mode)
     strUsage += HelpMessageGroup(_("Block creation options:"));
     strUsage += HelpMessageOpt("-blockmaxweight=<n>", strprintf(_("Set maximum BIP141 block weight (default: %d)"), DEFAULT_BLOCK_MAX_WEIGHT));
     strUsage += HelpMessageOpt("-blockmaxsize=<n>", strprintf(_("Set maximum block size in bytes (default: %d)"), DEFAULT_BLOCK_MAX_SIZE));
+    strUsage += HelpMessageOpt("-mineraddress=<addr>", _("Specify the address to use for the miner reward when external miners submit blocks with nonstandard outputs"));
     strUsage += HelpMessageOpt("-blockprioritysize=<n>", strprintf(_("Set maximum size of high-priority/low-fee transactions in bytes (default: %d)"), DEFAULT_BLOCK_PRIORITY_SIZE));
     if (showDebug)
         strUsage += HelpMessageOpt("-blockversion=<n>", "Override block version to test forking scenarios");
@@ -1459,6 +1461,21 @@ bool AppInit2(boost::thread_group& threadGroup, CScheduler& scheduler)
         // Only care about others providing witness capabilities if there is a softfork
         // defined.
         nRelevantServices = ServiceFlags(nRelevantServices | NODE_WITNESS);
+    }
+
+    // Validate mineraddress parameter if provided
+    std::string strMinerAddress = GetArg("-mineraddress", "");
+    if (!strMinerAddress.empty()) {
+        CBitcoinAddress addr(strMinerAddress);
+        if (!addr.IsValid()) {
+            return InitError(strprintf(
+                "Invalid address for -mineraddress=<addr>: '%s'. Must be a valid Bitcoin address.",
+                strMinerAddress));
+        }
+
+        // Add a warning that -mineraddress only applies within development fund block range
+        LogPrintf("Warning: -mineraddress is only effective for blocks within the development fund range (blocks %d to %d).\n", 
+                 Params().GetDevelopmentFundStartHeight(), Params().GetLastDevelopmentFundBlockHeight());
     }
 
     // ********************************************************* Step 10: import blocks

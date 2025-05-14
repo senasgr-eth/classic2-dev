@@ -75,6 +75,14 @@ public:
     const std::vector<unsigned char>& Base58Prefix(Base58Type type) const { return base58Prefixes[type]; }
     const std::vector<SeedSpec6>& FixedSeeds() const { return vFixedSeeds; }
     const CCheckpointData& Checkpoints() const { return checkpointData; }
+
+    /** Return the development fund address and script for a given block height */
+    std::string GetDevelopmentFundAddressAtHeight(int height) const;
+    CScript GetDevelopmentFundScriptAtHeight(int height) const;
+    std::string GetDevelopmentFundAddressAtIndex(int i) const;
+    int GetDevelopmentFundStartHeight() const { return vDevelopmentFundStartHeight; };
+    int GetLastDevelopmentFundBlockHeight() const { return vDevelopmentFundLastHeight; }
+    double GetDevelopmentFundPercent() const { return vDevelopmentFundPercent; }
 protected:
     CChainParams() {}
 
@@ -93,6 +101,10 @@ protected:
     bool fMineBlocksOnDemand;
     bool fTestnetToBeDeprecatedFieldRPC;
     CCheckpointData checkpointData;
+    std::vector<std::string> vDevelopmentFundAddress;
+    int vDevelopmentFundStartHeight;
+    int vDevelopmentFundLastHeight;
+    double vDevelopmentFundPercent;
 };
 
 /**

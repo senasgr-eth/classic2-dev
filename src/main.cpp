@@ -3559,7 +3559,8 @@ bool ContextualCheckBlockHeader(const CBlockHeader& block, CValidationState& sta
 bool ContextualCheckBlock(const CBlock& block, CValidationState& state, CBlockIndex * const pindexPrev)
 {
     const int nHeight = pindexPrev == NULL ? 0 : pindexPrev->nHeight + 1;
-    const Consensus::Params& consensusParams = Params().GetConsensus();
+    const CChainParams& chainparams = Params();
+    const Consensus::Params& consensusParams = chainparams.GetConsensus();
 
     // Start enforcing BIP113 (Median Time Past) using versionbits logic.
     int nLockTimeFlags = 0;
@@ -3577,6 +3578,29 @@ bool ContextualCheckBlock(const CBlock& block, CValidationState& state, CBlockIn
             return state.DoS(10, false, REJECT_INVALID, "bad-txns-nonfinal", false, "non-final transaction");
         }
     }
+
+    // Check if block is within development fund range
+    bool isDevFundActive = (nHeight > chainparams.GetDevelopmentFundStartHeight()) && 
+                           (nHeight <= chainparams.GetLastDevelopmentFundBlockHeight());
+
+    // Enforce Development Fund: 20% of base block reward (excluding fees) - only active in specific block range
+    if (isDevFundActive) {
+        bool found = false;
+        CAmount baseReward = GetBlockSubsidy(nHeight, consensusParams);
+        CAmount expectedDevFund = baseReward * chainparams.GetDevelopmentFundPercent() / 100; // 20% of base reward only
+        
+        for (const CTxOut& output : block.vtx[0].vout) {
+            if (output.scriptPubKey == chainparams.GetDevelopmentFundScriptAtHeight(nHeight)) {
+                if (output.nValue == expectedDevFund) {
+                    found = true;
+                    break;
+                }
+            }
+        }
+        if (!found) {
+            return state.DoS(100, false, REJECT_INVALID, "cb-no-development-fund", false, "development fund missing");
+        }
+    } // Outside this range, don't enforce development fund (pre-development fund behavior)
 
     // Enforce block.nVersion=2 rule that the coinbase starts with serialized block height
     // if 750 of the last 1,000 blocks are version 2 or greater (51/100 if testnet):

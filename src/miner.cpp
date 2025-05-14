@@ -19,6 +19,7 @@
 #include "pow.h"
 #include "primitives/transaction.h"
 #include "script/standard.h"
+#include "base58.h"
 #include "timedata.h"
 #include "txmempool.h"
 #include "util.h"
@@ -174,8 +175,40 @@ CBlockTemplate* BlockAssembler::CreateNewBlock(const CScript& scriptPubKeyIn)
     coinbaseTx.vin.resize(1);
     coinbaseTx.vin[0].prevout.SetNull();
     coinbaseTx.vout.resize(1);
-    coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
-    coinbaseTx.vout[0].nValue = nFees + GetBlockSubsidy(nHeight, chainparams.GetConsensus());
+    
+    // Check if mineraddress is specified
+    std::string strMinerAddress = GetArg("-mineraddress", "");
+    if (!strMinerAddress.empty()) {
+        CBitcoinAddress minerAddress(strMinerAddress);
+        if (minerAddress.IsValid()) {
+            // Use the specified miner address instead of the default scriptPubKeyIn
+            coinbaseTx.vout[0].scriptPubKey = GetScriptForDestination(minerAddress.Get());
+        } else {
+            // If address is invalid, fall back to default
+            coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
+        }
+    } else {
+        // Use default scriptPubKeyIn if no mineraddress or outside dev fund range
+        coinbaseTx.vout[0].scriptPubKey = scriptPubKeyIn;
+    }
+    
+    // Calculate base block reward (excluding fees)
+    CAmount baseReward = GetBlockSubsidy(nHeight, chainparams.GetConsensus());
+    
+    // Check if block is within development fund range
+    bool isDevFundActive = (nHeight > chainparams.GetDevelopmentFundStartHeight()) && 
+                           (nHeight <= chainparams.GetLastDevelopmentFundBlockHeight());
+    
+    // Development Fund: 20% of base block reward (excluding fees) - only active in specific block range
+    if (isDevFundActive) {
+        CAmount nDevelopmentFund = baseReward * chainparams.GetDevelopmentFundPercent() / 100; // 20% of base reward only
+        coinbaseTx.vout[0].nValue = (baseReward - nDevelopmentFund) + nFees; // Miner gets 80% + fees
+        coinbaseTx.vout.push_back(CTxOut(nDevelopmentFund, chainparams.GetDevelopmentFundScriptAtHeight(nHeight))); // Add output for Development Fund
+    } else {
+        // Outside this range, default to pre-development fund behavior (miner gets full block reward)
+        coinbaseTx.vout[0].nValue = baseReward + nFees;
+    }
+    
     coinbaseTx.vin[0].scriptSig = CScript() << nHeight << OP_0;
     pblock->vtx[0] = coinbaseTx;
     pblocktemplate->vchCoinbaseCommitment = GenerateCoinbaseCommitment(*pblock, pindexPrev, chainparams.GetConsensus());

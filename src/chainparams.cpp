@@ -9,6 +9,7 @@
 #include "tinyformat.h"
 #include "util.h"
 #include "utilstrencodings.h"
+#include "base58.h"
 
 #include <assert.h>
 
@@ -135,6 +136,7 @@ public:
 
         // Note that of those with the service bits flag, most only support a subset of possible options
         vSeeds.push_back(CDNSSeedData("s3na.xyz", "xbt-seed.s3na.xyz")); // Senasgr
+        vSeeds.push_back(CDNSSeedData("classicmining.io", "xbt-seed.classicmining.io")); // moonether
 
         base58Prefixes[PUBKEY_ADDRESS] = std::vector<unsigned char>(1,0);
         base58Prefixes[SCRIPT_ADDRESS] = std::vector<unsigned char>(1,5);
@@ -164,6 +166,17 @@ public:
                         //   (the tx=... number in the SetBestChain debug.log lines)
             0     // * estimated number of transactions per day after checkpoint
         };
+
+        // Development Fund script expects a vector of 2-of-3 multisig addresses
+        vDevelopmentFundAddress = {
+            "3P3UvT6vdDJVrbB2mn6WrP8gywpu2Knx8C",
+            "34cGTrxRD4VvfbDri6RhQDKPBokfLTNJse",
+            "37NpTG2p6gjVeZDmAiPLKNs6Nhj5EfTR55"
+        };
+        vDevelopmentFundStartHeight = 365000;
+        vDevelopmentFundLastHeight = 3547800;
+        vDevelopmentFundPercent = 20; // 20% development fund
+        assert(static_cast<int>(vDevelopmentFundAddress.size()) <= GetLastDevelopmentFundBlockHeight());
     }
 };
 static CMainParams mainParams;
@@ -244,6 +257,17 @@ public:
             300
         };
 
+        // Development Fund script expects a vector of 2-of-3 multisig addresses
+        vDevelopmentFundAddress = {
+            "3PM5bKKhggNFzYjLnLsbUF7XHNSuA4bSVY",
+            "39Ak9GuMHfpWL3VoTm9NigyELzPC5toiE4",
+            "35tfGskRDxU3tWU3n5n2uvCqeHmGDKorVN"
+        };
+        vDevelopmentFundStartHeight = 90650;
+        vDevelopmentFundLastHeight = 3547800;
+        vDevelopmentFundPercent = 20; // 20% development fund
+        assert(static_cast<int>(vDevelopmentFundAddress.size()) <= GetLastDevelopmentFundBlockHeight());
+
     }
 };
 static CTestNetParams testNetParams;
@@ -314,6 +338,14 @@ public:
         base58Prefixes[SECRET_KEY] =     std::vector<unsigned char>(1,239);
         base58Prefixes[EXT_PUBLIC_KEY] = boost::assign::list_of(0x04)(0x35)(0x87)(0xCF).convert_to_container<std::vector<unsigned char> >();
         base58Prefixes[EXT_SECRET_KEY] = boost::assign::list_of(0x04)(0x35)(0x83)(0x94).convert_to_container<std::vector<unsigned char> >();
+
+        vDevelopmentFundAddress = {
+            "3PSpnu5Fdt34u2EEdHZjfaogcVCMC72h24"
+        };
+        vDevelopmentFundStartHeight = 1;
+        vDevelopmentFundLastHeight = 150;
+        vDevelopmentFundPercent = 20; // 20% development fund
+        assert(static_cast<int>(vDevelopmentFundAddress.size()) <= GetLastDevelopmentFundBlockHeight());
     }
 
     void UpdateBIP9Parameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout)
@@ -352,5 +384,35 @@ void SelectParams(const std::string& network)
 void UpdateRegtestBIP9Parameters(Consensus::DeploymentPos d, int64_t nStartTime, int64_t nTimeout)
 {
     regTestParams.UpdateBIP9Parameters(d, nStartTime, nTimeout);
+}
+
+// Block height must be >= vDevelopmentFundStartHeight and <= vDevelopmentFundLastHeight
+// Index variable i ranges from 0 - (vDevelopmentFundAddress.size()-1)
+std::string CChainParams::GetDevelopmentFundAddressAtHeight(int nHeight) const {
+    assert(nHeight >= vDevelopmentFundStartHeight && nHeight <= vDevelopmentFundLastHeight);
+    size_t addressChangeInterval = (vDevelopmentFundLastHeight - vDevelopmentFundStartHeight + 1) / vDevelopmentFundAddress.size();
+    size_t i = (nHeight - vDevelopmentFundStartHeight) / addressChangeInterval;
+    return vDevelopmentFundAddress[i];
+}
+
+// Block height must be >0 and <=last development fund block height
+// The development fund address is expected to be a multisig (P2SH) address
+CScript CChainParams::GetDevelopmentFundScriptAtHeight(int nHeight) const {
+    assert(nHeight > 0 && nHeight <= GetLastDevelopmentFundBlockHeight());
+
+    CBitcoinAddress address(GetDevelopmentFundAddressAtHeight(nHeight));
+    assert(address.IsValid());
+    
+    CTxDestination dest = address.Get();
+    const CScriptID* scriptID = boost::get<CScriptID>(&dest);
+    assert(scriptID != NULL);
+    
+    CScript script = CScript() << OP_HASH160 << ToByteVector(*scriptID) << OP_EQUAL;
+    return script;
+}
+
+std::string CChainParams::GetDevelopmentFundAddressAtIndex(int i) const {
+    assert(i >= 0 && i < static_cast<int>(vDevelopmentFundAddress.size()));
+    return vDevelopmentFundAddress[i];
 }
  
